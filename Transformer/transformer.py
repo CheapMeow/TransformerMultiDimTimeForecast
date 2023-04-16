@@ -71,7 +71,7 @@ class TransformerTS(nn.Module):
         )
         self.pos = PositionalEncoding(d_model)
         self.enc_input_fc = nn.Linear(enc_feature_size, d_model)
-        self.dec_input_fc = nn.Linear(enc_feature_size, d_model)
+        self.dec_input_fc = nn.Linear(dec_feature_size, d_model)
         self.out_fc = nn.Linear(d_model, dec_feature_size)
 
     # model(src, tgt)
@@ -89,7 +89,7 @@ class TransformerTS(nn.Module):
         # embed_encoder_input: [enc_seq_len, enc_feature_size] -> [enc_seq_len, d_model]
         embed_encoder_input = self.pos(self.enc_input_fc(enc_input))
 
-        # embed_decoder_input: [dec_seq_len, enc_feature_size] -> [dec_seq_len, d_model]
+        # embed_decoder_input: [dec_seq_len, dec_feature_size] -> [dec_seq_len, d_model]
         embed_decoder_input = self.dec_input_fc(dec_input)
 
         # transform
