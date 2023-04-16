@@ -92,7 +92,6 @@ class TransformerTS(nn.Module):
         # embed_decoder_input: [dec_seq_len, dec_feature_size] -> [dec_seq_len, d_model]
         embed_decoder_input = self.dec_input_fc(dec_input)
 
-        # transform
         # x: [dec_seq_len, d_model]
         x = self.transform(src=embed_encoder_input,
                            tgt=embed_decoder_input,
