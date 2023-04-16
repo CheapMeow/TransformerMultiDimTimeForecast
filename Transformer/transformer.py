@@ -85,7 +85,7 @@ class TransformerTS(nn.Module):
     # In a typical training setup, we train the model to predict 4 future weekly ILI ratios from 10 trailing weekly datapoints.
     # That is, given the encoder input (x1, x2, …, x10) and the decoder input (x10, …, x13),
     # the decoder aims to output (x11, …, x14).
-    def forward(self, enc_input, dec_input):
+    def forward(self, enc_input, dec_input, src_mask, tgt_mask):
         # embed_encoder_input: [enc_seq_len, enc_feature_size] -> [enc_seq_len, d_model]
         embed_encoder_input = self.pos(self.enc_input_fc(enc_input))
 
@@ -94,7 +94,10 @@ class TransformerTS(nn.Module):
 
         # transform
         # x: [dec_seq_len, d_model]
-        x = self.transform(embed_encoder_input, embed_decoder_input)
+        x = self.transform(src=embed_encoder_input,
+                           tgt=embed_decoder_input,
+                           src_mask=src_mask,
+                           tgt_mask=tgt_mask)
 
         # x: [dec_seq_len, d_model] -> [dec_seq_len, dec_feature_size]
         x = self.out_fc(x)

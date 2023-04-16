@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader
 from torch.autograd import Variable
 
 from dataset.myDataset import MyDataset
+import utils
 
 # device GPU or CPU
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -31,6 +32,20 @@ test_loader = DataLoader(dataset_test, batch_size=full_seq_len, shuffle=False, d
 
 criterion = nn.MSELoss()  # mean square error
 
+# Make src mask for decoder with size:
+# [batch_size*n_heads, dec_seq_len, enc_seq_len]?
+# [batch_size*n_heads, enc_seq_len, enc_seq_len]?
+src_mask = utils.generate_square_subsequent_mask(
+    dim1=enc_seq_len,
+    dim2=enc_seq_len
+    )
+
+# Make tgt mask for decoder with size:
+# [batch_size*n_heads, dec_seq_len, dec_seq_len]
+tgt_mask = utils.generate_square_subsequent_mask(
+    dim1=dec_seq_len,
+    dim2=dec_seq_len
+    )
 
 # 测试
 def test_transformer():
@@ -49,7 +64,7 @@ def test_transformer():
             dec_output = full_len_input.numpy()[enc_seq_len:enc_seq_len + dec_seq_len]
             dec_output = Variable(torch.from_numpy(dec_output)).to(device)
 
-            prediction = net_test(enc_input, dec_input)
+            prediction = net_test(enc_input, dec_input, src_mask, tgt_mask)
 
             print("-------------------------------------------------")
             print("输入:", enc_input)
