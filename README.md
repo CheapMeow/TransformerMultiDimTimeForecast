@@ -39,7 +39,7 @@ def __init__(self,...):
     self.dec_input_fc = nn.Linear(dec_feature_size, d_model)
     self.out_fc = nn.Linear(d_model, dec_feature_size)
 
-def forward(self, enc_input, dec_input):
+def forward(self, enc_input, dec_input, src_mask, tgt_mask):
     # embed_encoder_input: [enc_seq_len, enc_feature_size] -> [enc_seq_len, d_model]
     embed_encoder_input = self.pos(self.enc_input_fc(enc_input))
 
@@ -47,7 +47,10 @@ def forward(self, enc_input, dec_input):
     embed_decoder_input = self.dec_input_fc(dec_input)
 
     # x: [dec_seq_len, d_model]
-    x = self.transform(embed_encoder_input, embed_decoder_input)
+    x = self.transform(src=embed_encoder_input,
+                       tgt=embed_decoder_input,
+                       src_mask=src_mask,
+                       tgt_mask=tgt_mask)
 
     # x: [dec_seq_len, d_model] -> [dec_seq_len, dec_feature_size]
     x = self.out_fc(x)
