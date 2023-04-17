@@ -12,8 +12,6 @@ Comments have Chinese, sorry for others.
 
 https://github.com/KasperGroesLudvigsen/influenza_transformer
 
-https://github.com/fengjun321/Transformer_count
-
 ## Network Structure
 
 Only two modules: 
