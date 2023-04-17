@@ -1,126 +1,150 @@
 #!/usr/bin/env python3
 # encoding: utf-8
 
-import sys
-sys.path.append("../../../")
-
+import time
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
 
-from dataset.myDataset import MyDataset
-from Transformer.transformer import TransformerTS
+from transformer import TimeSeriesTransformer
+
 import utils
+
+# ===============================
+
+# hyper parameters
+
+enc_features_size = 2
+dec_features_size = 2
+batch_first = False
+d_model = 128  # After embedding, the feature length of each element
+num_encoder_layers = 4  # Number of encoder layers
+num_decoder_layers = 4  # Number of decoder layers
+n_heads = 8  # Number of attention heads
+dropout_encoder = 0.2
+dropout_decoder = 0.2
+dropout_pos_enc = 0.1
+dim_feedforward_encoder = 1024  # Dimensions of Feed Forward Layer in Encoder
+dim_feedforward_decoder = 1024  # Dimensions of Feed Forward Layer in Decoder
+
+lr = 0.001  # learning rate
+
+# ===============================
+
+# Parameters determined by the task situation
+
+# forecast time length
+
+pred_len_size = 10
+name_flag = 'Time10'
+
+# batch size
+
+enc_seq_len = pred_len_size
+dec_seq_len = pred_len_size
+
+full_seq_len = enc_seq_len + dec_seq_len
+
+# Parameters related to the training situation
+
+total_epoch = 1000  # total epoch
+debug_epoch = 10  # Print the situation every debug_epoch
+
+train_loss_list = []  # Save loss every debug_epoch
+total_loss = 31433357277  # The largest loss during network training
+
+start_time = 0
 
 # device GPU or CPU
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print('You are using: ' + str(device))
 
-# batch size
-enc_seq_len = 4
-dec_seq_len = 3
+# ===============================
 
-full_seq_len = enc_seq_len + dec_seq_len
+# 导入数据
 
-# total epoch(总共训练多少轮)
-total_epoch = 1000
-
-# 1. 导入训练数据
-# 这里注意要改
+from dataset.myDataset import MyDataset
 filename = '../data/myData.csv'
 dataset_train = MyDataset(filename)
-# 从一个 csv 中取数据的时候是一行一行取，然后使用 DataLoader 的话，一行就是一个 batch
-# 假设 dataloader 的写法是
-# train_loader = DataLoader(dataset_train, batch_size=batch_size_train, shuffle=False, drop_last=True)
-#
-# 对于 NLP，一行有三个元素（三列），一个元素就是一个句子，那么这个元素 split 之后就是 enc_seq_len, dec_seq_len
-# 那么训练循环应该写成
-# for idx, (enc_input, dec_input, dec_output) in enumerate(train_loader):
-# enc_input: [batch_size, enc_seq_len] dec_input: [batch_size, dec_seq_len] dec_output: [batch_size, dec_seq_len]
-# 这里的 batch_size 是 DataLoader 中设置的
-#
-# 但是对于时间预测应用来说，一行是一个时间戳，一行中的一个元素（一列）是一个特征的数值
-# 所以对于时间预测应用来说，一行应该是 enc_seq_len, dec_seq_len 中的一个
-# 那么训练循环应该写成
-# for idx, (full_len_input, dec_output) in enumerate(train_loader):
-# full_len_input: [batch_size, enc_feature_size] dec_output: [batch_size, dec_feature_size]
-# 所以说 DataLoader 这里的 batch_size
-# 与 transformer_model = nn.Transformer(...) transformer_model(src, tgt) 的 src, tgt 的 batch_size 不是一回事
-# 不考虑 transformer 的 batch, transformer_model 的输入输出是 src: (S, E) tgt: (T, E) output: (T, E)
-# where S is the source sequence length, T is the target sequence length, N is the batch size, E is the feature number
-# 所以 DataLoader 的 batch_size 应该转换成 transformer 的输入输出的 S T
-#
-# 参考 https://towardsdatascience.com/how-to-make-a-pytorch-transformer-for-time-series-forecasting-69e073d4061e
-#
-# That is, given the encoder input (x1, x2, …, x10) and the decoder input (x10, …, x13),
-# the decoder aims to output (x11, …, x14).
-#
-# 现在已经有的 full_len_input 相当于 (x1, x2, ..., x14)
-# 所以需要 enc_input = full_len_input.numpy()[:enc_seq_len] 获得 (x1, x2, ..., x10)
-# dec_input = full_len_input.numpy()[enc_seq_len-1:enc_seq_len-1+dec_seq_len] 获得 (x10, …, x13)
-# dec_output = full_len_input.numpy()[enc_seq_len:enc_seq_len+dec_seq_len] 获得 (x11, …, x14)
-# 那么其实 full_seq_len = enc_seq_len+dec_seq_len
-#
-# 而 transformer 的 E 其实就是 d_model
-# 所以如果我们要输入一个自定义的 enc_feature_size 输出一个自定义的 dec_feature_size
-# 其实就在 transformer 的前后加两个线性层
-# 前面的线性层 [:, enc_feature_size] -> [:, d_model]
-# 后面的线性层 [:, d_model] -> [:, dec_feature_size]
 train_loader = DataLoader(dataset_train, batch_size=full_seq_len, shuffle=False, drop_last=True)
 
-# 2. 构建模型，优化器
-# 输入特征维度可能要改
-model = TransformerTS(enc_feature_size=2,
-                    dec_feature_size=2,
-                    d_model=32,  # 编码器/解码器输入中预期特性的数量
-                    nhead=8,
-                    num_encoder_layers=3,
-                    num_decoder_layers=3,
-                    dim_feedforward=32,
-                    dropout=0.1,
-                    activation='relu',
-                    custom_encoder=None,
-                    custom_decoder=None).to(device)
+# ===============================
 
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+# 模型，损失函数，优化器
+
+model = TimeSeriesTransformer(enc_features_size=enc_features_size,
+                 dec_features_size=dec_features_size,
+                 batch_first=batch_first,
+                 d_model=d_model,
+                 num_encoder_layers=num_encoder_layers,
+                 num_decoder_layers=num_decoder_layers,
+                 n_heads=n_heads,
+                 dropout_encoder=dropout_encoder,
+                 dropout_decoder=dropout_decoder,
+                 dropout_pos_enc=dropout_pos_enc,
+                 dim_feedforward_encoder=dim_feedforward_encoder,
+                 dim_feedforward_decoder=dim_feedforward_decoder).to(device)
+
+optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=2000, gamma=0.1)  # Learning Rate Decay
 criterion = nn.MSELoss()
-train_loss_list = []  # 每次epoch的loss保存起来
-total_loss = 31433357277  # 网络训练过程中最大的loss
 
 # Make src mask for decoder with size:
 # [batch_size*n_heads, dec_seq_len, enc_seq_len]?
 # [batch_size*n_heads, enc_seq_len, enc_seq_len]?
 src_mask = utils.generate_square_subsequent_mask(
-    dim1=enc_seq_len,
+    dim1=dec_seq_len,
     dim2=enc_seq_len
-    )
+    ).to(device)
 
 # Make tgt mask for decoder with size:
 # [batch_size*n_heads, dec_seq_len, dec_seq_len]
 tgt_mask = utils.generate_square_subsequent_mask(
     dim1=dec_seq_len,
     dim2=dec_seq_len
-    )
+    ).to(device)
 
-# 3. 模型训练
+# ===============================
+
+# 模型训练
+
 def train_transformer(epoch):
     global total_loss
+    global start_time
     mode = True
     model.train(mode=mode)  # 模型设置为训练模式
     loss_epoch = 0  # 一次epoch的loss总和
+    flag_stop = 0  # 认为收敛的次数
     for idx, (full_len_input, dec_output) in enumerate(train_loader):
         enc_input = full_len_input.numpy()[:enc_seq_len]
-        enc_input = Variable(torch.from_numpy(enc_input)).to(device)
+        enc_input = Variable(torch.from_numpy(enc_input)).to(device)  # [enc_seq_len, enc_features_size]
 
-        dec_input = full_len_input.numpy()[enc_seq_len - 1:enc_seq_len - 1 + dec_seq_len]
-        dec_input = Variable(torch.from_numpy(dec_input)).to(device)
+        dec_input = dec_output.numpy()[enc_seq_len - 1:enc_seq_len - 1 + dec_seq_len]
+        dec_input = Variable(torch.from_numpy(dec_input)).to(device)  # [dec_seq_len, dec_features_size]
 
-        dec_output = full_len_input.numpy()[enc_seq_len:enc_seq_len + dec_seq_len]
-        dec_output = Variable(torch.from_numpy(dec_output)).to(device)
+        dec_output = dec_output.numpy()[enc_seq_len:enc_seq_len + dec_seq_len]
+        dec_output = Variable(torch.from_numpy(dec_output)).to(device)  # [dec_seq_len, dec_features_size]
 
+        # 我在我的电脑上运行的时候到这里就没有问题了
+        # 但是在服务器上运行的时候就会报错
+        # File "/public/home/.../python3/lib/python3.8/site-packages/torch/nn/modules/transformer.py", line 134, in forward
+        # if src.size(2) != self.d_model or tgt.size(2) != self.d_model:
+        # IndexError: Dimension out of range(expected to be in range of[-2, 1], but got 2)
+        # 这看上去像是我必须在第 2 个维度上等于 d_model
+        # 所以我又给输入输出在第 0 个维度上加上了一个 1
+
+        # [enc_seq_len, enc_features_size] -> [enc_seq_len, 1, enc_features_size]
+        enc_input = torch.unsqueeze(enc_input, 1)
+        # [dec_seq_len, dec_features_size] -> [dec_seq_len, 1, dec_features_size]
+        dec_input = torch.unsqueeze(dec_input, 1)
+
+        # [dec_seq_len, 1, dec_features_size]
         prediction = model(enc_input, dec_input, src_mask, tgt_mask)
+
+        # [dec_seq_len, 1, dec_features_size] -> [dec_seq_len, dec_features_size]
+        prediction = torch.squeeze(prediction, 1)
+
         loss = criterion(prediction, dec_output)
         optimizer.zero_grad()  # clear gradients for this training step
         loss.backward()  # back propagation, compute gradients
@@ -129,19 +153,30 @@ def train_transformer(epoch):
         #print(scheduler.get_lr())
 
         loss_epoch += loss.item()  # 将每个 batch 的 loss 累加，直到所有数据都计算完毕
-        if epoch % 100 == 0:
-            if idx == len(train_loader) - 1:
-                print('Train Epoch:{}\tLoss:{:.9f}'.format(epoch, loss_epoch))
-                train_loss_list.append(loss_epoch)
-                if loss_epoch < total_loss:
-                    total_loss = loss_epoch
-                    # 这里也注意要改！
-                    torch.save(model, '../model/myModel.pkl')  # save model
+
+        # 如果认为收敛次数大于某个值，就结束
+        if loss.item() < 0.05:
+            flag_stop += 1
+            if flag_stop >= 100:
+                break
+
+    if epoch % debug_epoch == 0:
+        print('Train Epoch:{}\tLoss:{:.9f}'.format(epoch, loss_epoch))
+        if epoch != 0:
+            end_time = time.time()
+            print("Used time in last {} epochs is {} s".format(debug_epoch, end_time - start_time))
+            start_time = end_time
+        train_loss_list.append(loss_epoch)
+        if loss_epoch < total_loss:  # 损失达到新的最小值时保存模型
+            total_loss = loss_epoch
+            # 这里也注意要改！
+            torch.save(model, '../model/myModel.pkl')  # save model
 
 
 if __name__ == '__main__':
     # 模型训练
     print("Start Training...")
+    start_time = time.time()
     for i in range(total_epoch):  # 模型训练1000轮
         train_transformer(i)
     print("Stop Training!")

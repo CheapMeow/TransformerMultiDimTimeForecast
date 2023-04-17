@@ -13,6 +13,9 @@ from torch.autograd import Variable
 from dataset.myDataset import MyDataset
 import utils
 
+enc_features_size = 2
+dec_features_size = 2
+
 # device GPU or CPU
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # print('You are using: ' + str(device))
@@ -33,19 +36,18 @@ test_loader = DataLoader(dataset_test, batch_size=full_seq_len, shuffle=False, d
 criterion = nn.MSELoss()  # mean square error
 
 # Make src mask for decoder with size:
-# [batch_size*n_heads, dec_seq_len, enc_seq_len]?
-# [batch_size*n_heads, enc_seq_len, enc_seq_len]?
+# [batch_size*n_heads, dec_seq_len, enc_seq_len]
 src_mask = utils.generate_square_subsequent_mask(
-    dim1=enc_seq_len,
+    dim1=dec_seq_len,
     dim2=enc_seq_len
-    )
+    ).to(device)
 
 # Make tgt mask for decoder with size:
 # [batch_size*n_heads, dec_seq_len, dec_seq_len]
 tgt_mask = utils.generate_square_subsequent_mask(
     dim1=dec_seq_len,
     dim2=dec_seq_len
-    )
+    ).to(device)
 
 # 测试
 def test_transformer():
@@ -64,7 +66,16 @@ def test_transformer():
             dec_output = full_len_input.numpy()[enc_seq_len:enc_seq_len + dec_seq_len]
             dec_output = Variable(torch.from_numpy(dec_output)).to(device)
 
+            # [enc_seq_len, enc_features_size] -> [enc_seq_len, 1, enc_features_size]
+            enc_input = torch.unsqueeze(enc_input, 1)
+            # [dec_seq_len, dec_features_size] -> [dec_seq_len, 1, dec_features_size]
+            dec_input = torch.unsqueeze(dec_input, 1)
+
+            # [dec_seq_len, 1, dec_features_size]
             prediction = net_test(enc_input, dec_input, src_mask, tgt_mask)
+
+            # [dec_seq_len, 1, dec_features_size] -> [dec_seq_len, dec_features_size]
+            prediction = torch.squeeze(prediction, 1)
 
             print("-------------------------------------------------")
             print("输入:", enc_input)
@@ -88,11 +99,20 @@ def test_transformer():
 if __name__ == '__main__':
     # 模型测试
     print("testing...")
+    legends = []
     p_v, r_v = test_transformer()
 
     # 对比图
     plt.plot(p_v.cpu(), c='green')
     plt.plot(r_v.cpu(), c='orange', linestyle='--')
+
+    for i in range(enc_features_size):
+        legends.append('Prediction_feature_{}'.format(i))
+
+    for i in range(dec_features_size):
+        legends.append('Label_feature_{}'.format(i))
+
+    plt.legend(legends)
     plt.show()
     print("stop testing!")
 
