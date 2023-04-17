@@ -60,10 +60,10 @@ def test_transformer():
             enc_input = full_len_input.numpy()[:enc_seq_len]
             enc_input = Variable(torch.from_numpy(enc_input)).to(device)
 
-            dec_input = full_len_input.numpy()[enc_seq_len - 1:enc_seq_len - 1 + dec_seq_len]
+            dec_input = dec_output.numpy()[enc_seq_len - 1:enc_seq_len - 1 + dec_seq_len]
             dec_input = Variable(torch.from_numpy(dec_input)).to(device)
 
-            dec_output = full_len_input.numpy()[enc_seq_len:enc_seq_len + dec_seq_len]
+            dec_output = dec_output.numpy()[enc_seq_len:enc_seq_len + dec_seq_len]
             dec_output = Variable(torch.from_numpy(dec_output)).to(device)
 
             # [enc_seq_len, enc_features_size] -> [enc_seq_len, 1, enc_features_size]
